@@ -6,201 +6,129 @@ if (!isset($_SESSION['usuario_id']) || !in_array($_SESSION['tipo'], ['admin', 's
     exit;
 }
 
-require_once 'includes/conexao.php';
-
 $hoje = date('Y-m-d');
-$mensagem = '';
-$erro = '';
+$mensagem = $erro = '';
 
-// Processar marcação de presença (POST)
+// 1. Processar Registo de Presença
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['marcar_presenca'])) {
-    $estagiario_id = $_POST['estagiario_id'] ?? null;
-    $status = $_POST['status'] ?? 'presente';
-    $observacao = trim($_POST['observacao'] ?? '');
+    $estagiario_id = (int)$_POST['estagiario_id'];
+    $status = $_POST['status'];
+    $obs = trim($_POST['observacao']);
 
-    if ($estagiario_id) {
-        try {
-            // Verifica se já existe presença hoje para este estagiário
-            $stmt = query("SELECT id FROM presencas WHERE estagiario_id = ? AND data = ?", [$estagiario_id, $hoje]);
-            if ($stmt->fetch()) {
-                $erro = 'Presença já marcada hoje para este estagiário.';
-            } else {
-                // Insere nova presença
-                query(
-                    "INSERT INTO presencas (estagiario_id, data, hora_entrada, status, observacao) 
-                     VALUES (?, ?, CURTIME(), ?, ?)",
-                    [$estagiario_id, $hoje, $status, $observacao]
-                );
-                $mensagem = 'Presença marcada com sucesso!';
-            }
-        } catch (PDOException $e) {
-            $erro = 'Erro ao marcar presença: ' . $e->getMessage();
+    try {
+        // Verifica se já existe registo hoje
+        $check = $pdo->prepare("SELECT id FROM presencas WHERE estagiario_id = ? AND data = ?");
+        $check->execute([$estagiario_id, $hoje]);
+        
+        if ($check->fetch()) {
+            $erro = "Já foi registada a presença deste estagiário hoje.";
+        } else {
+            $sql = "INSERT INTO presencas (estagiario_id, data, hora_entrada, status, observacao) VALUES (?, ?, CURTIME(), ?, ?)";
+            $pdo->prepare($sql)->execute([$estagiario_id, $hoje, $status, $obs]);
+            $mensagem = "Presença registada com sucesso!";
         }
-    } else {
-        $erro = 'Selecione um estagiário.';
+    } catch (PDOException $e) {
+        $erro = "Erro ao gravar: " . $e->getMessage();
     }
 }
 
-// Buscar estagiários para o select
-$estagiarios = [];
-try {
-    $stmt = $pdo->query("
-        SELECT e.id, u.nome 
-        FROM estagiarios e 
-        INNER JOIN usuarios u ON e.usuario_id = u.id 
-        WHERE u.tipo = 'estagiario' 
-        ORDER BY u.nome
-    ");
-    $estagiarios = $stmt->fetchAll();
-} catch (PDOException $e) {
-    $erro = 'Erro ao carregar estagiários: ' . $e->getMessage();
-}
+// 2. Carregar Estagiários para o Select
+$estagiarios_lista = $pdo->query("SELECT id, nome FROM estagiarios ORDER BY nome")->fetchAll();
 
-// Buscar presenças recentes (últimos 7 dias, para visão geral)
-$presencas_recentes = [];
-try {
-    $stmt = $pdo->prepare("
-        SELECT p.*, u.nome, DATE_FORMAT(p.data, '%d/%m/%Y') AS data_formatada
-        FROM presencas p
-        INNER JOIN estagiarios e ON p.estagiario_id = e.id
-        INNER JOIN usuarios u ON e.usuario_id = u.id
-        WHERE p.data >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-        ORDER BY p.data DESC, u.nome
-    ");
-    $stmt->execute();
-    $presencas_recentes = $stmt->fetchAll();
-} catch (PDOException $e) {
-    $erro = 'Erro ao carregar histórico: ' . $e->getMessage();
-}
+// 3. Carregar Histórico de Hoje
+$sql_hoje = "SELECT p.*, e.nome as estagiario_nome 
+             FROM presencas p 
+             JOIN estagiarios e ON p.estagiario_id = e.id 
+             WHERE p.data = ? 
+             ORDER BY p.hora_entrada DESC";
+$stmt_hoje = $pdo->prepare($sql_hoje);
+$stmt_hoje->execute([$hoje]);
+$presencas_dia = $stmt_hoje->fetchAll();
 ?>
 
 <!DOCTYPE html>
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Presenças</title>
+    <title>ADM - Presenças</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
-<body>
+<body class="bg-light">
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="dashboard.php">Controle de Estagiários</a>
-            <div class="collapse navbar-collapse">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="estagiarios.php">Estagiários</a></li>
-                    <li class="nav-item"><a class="nav-link" href="logout.php">Sair</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+<?php include 'includes/navbar.php'; ?>
 
-    <div class="container mt-4">
-        <h2 class="mb-4">Registro de Presenças - <?= date('d/m/Y') ?></h2>
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm p-4">
+                <h4 class="fw-bold mb-3">Marcar Presença</h4>
+                <p class="text-muted small">Data: <?= date('d/m/Y') ?></p>
 
-        <?php if ($erro): ?>
-            <div class="alert alert-danger"><?= htmlspecialchars($erro) ?></div>
-        <?php endif; ?>
+                <?php if($erro): ?> <div class="alert alert-danger small"><?= $erro ?></div> <?php endif; ?>
+                <?php if($mensagem): ?> <div class="alert alert-success small"><?= $mensagem ?></div> <?php endif; ?>
 
-        <?php if ($mensagem): ?>
-            <div class="alert alert-success"><?= htmlspecialchars($mensagem) ?></div>
-        <?php endif; ?>
-
-        
-        <div class="card mb-4">
-            <div class="card-header bg-primary text-white">
-                Marcar Presença Hoje
-            </div>
-            <div class="card-body">
                 <form method="POST">
-                    <input type="hidden" name="marcar_presenca" value="1">
-
                     <div class="mb-3">
-                        <label for="estagiario_id" class="form-label">Estagiário </label>
-                        <select class="form-select" id="estagiario_id" name="estagiario_id" required>
-                            
-                            <?php foreach ($estagiarios as $est): ?>
+                        <label class="form-label fw-bold">Estagiário</label>
+                        <select name="estagiario_id" class="form-select" required>
+                            <option value="">-- Selecionar --</option>
+                            <?php foreach ($estagiarios_lista as $est): ?>
                                 <option value="<?= $est['id'] ?>"><?= htmlspecialchars($est['nome']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-
                     <div class="mb-3">
-                        <label class="form-label">Status </label>
-                        <div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="status" id="presente" value="presente" checked>
-                                <label class="form-check-label" for="presente">Presente</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="status" id="ausente" value="ausente">
-                                <label class="form-check-label" for="ausente">Ausente</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="status" id="justificado" value="justificado">
-                                <label class="form-check-label" for="justificado">Justificado</label>
-                            </div>
-                        </div>
+                        <label class="form-label fw-bold">Estado</label>
+                        <select name="status" class="form-select">
+                            <option value="presente">Presente</option>
+                            <option value="ausente">Ausente</option>
+                            <option value="justificado">Justificado</option>
+                        </select>
                     </div>
-
                     <div class="mb-3">
-                        <label for="observacao" class="form-label">Observação (opcional)</label>
-                        <textarea class="form-control" id="observacao" name="observacao" rows="2" placeholder="ex.: Atestado médico"></textarea>
+                        <label class="form-label fw-bold">Observação</label>
+                        <textarea name="observacao" class="form-control" rows="2"></textarea>
                     </div>
-
-                    <button type="submit" class="btn btn-success">Marcar Presença</button>
+                    <button type="submit" name="marcar_presenca" class="btn btn-primary w-100">Confirmar Registo</button>
                 </form>
             </div>
         </div>
 
-        
-        <h3 class="mb-3">Histórico de Presenças (Últimos 7 Dias)</h3>
-
-        <?php if (empty($presencas_recentes)): ?>
-            <div class="alert alert-info">Nenhuma presença registrada nos últimos 7 dias.</div>
-        <?php else: ?>
-            <div class="table-responsive">
-                <table class="table table-striped table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Data</th>
-                            <th>Estagiário</th>
-                            <th>Status</th>
-                            <th>Hora Entrada</th>
-                            <th>Observação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($presencas_recentes as $p): ?>
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm p-4">
+                <h4 class="fw-bold mb-3">Presenças de Hoje</h4>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
                             <tr>
-                                <td><?= $p['data_formatada'] ?></td>
-                                <td><?= htmlspecialchars($p['nome']) ?></td>
-                                <td>
-                                    <?php
-                                    $badge = match($p['status']) {
-                                        'presente' => 'bg-success',
-                                        'ausente' => 'bg-danger',
-                                        'justificado' => 'bg-warning',
-                                        default => 'bg-secondary'
-                                    };
-                                    ?>
-                                    <span class="badge <?= $badge ?>"><?= ucfirst($p['status']) ?></span>
-                                </td>
-                                <td><?= $p['hora_entrada'] ?? '-' ?></td>
-                                <td><?= htmlspecialchars($p['observacao'] ?? '-') ?></td>
+                                <th>Estagiário</th>
+                                <th>Hora</th>
+                                <th>Estado</th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($presencas_dia)): ?>
+                                <tr><td colspan="3" class="text-center text-muted">Nenhum registo até agora.</td></tr>
+                            <?php else: foreach ($presencas_dia as $p): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($p['estagiario_nome']) ?></td>
+                                    <td><?= $p['hora_entrada'] ?></td>
+                                    <td>
+                                        <span class="badge bg-<?= $p['status'] == 'presente' ? 'success' : ($p['status'] == 'ausente' ? 'danger' : 'warning') ?>">
+                                            <?= ucfirst($p['status']) ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        <?php endif; ?>
+        </div>
     </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

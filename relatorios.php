@@ -151,8 +151,61 @@ if (isset($_GET['export'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relatórios - Controle de Estagiários</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+<style>
+    :root {
+        --adm-blue: #003366; /* Azul Aeroportos */
+        --adm-accent: #0056b3;
+        --bg-light: #f4f7f9;
+    }
+
+    body { 
+        font-family: 'Inter', sans-serif; 
+        background-color: var(--bg-light); 
+        color: #334155;
+    }
+
+    .card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .btn-primary {
+        background-color: var(--adm-blue);
+        border: none;
+        padding: 10px 20px;
+        font-weight: 500;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--adm-accent);
+        transform: translateY(-1px);
+    }
+
+    .sidebar-nav {
+        background: white;
+        border-right: 1px solid #e2e8f0;
+        height: 100vh;
+    }
+
+    .nav-link {
+        color: #64748b;
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin: 4px 10px;
+    }
+
+    .nav-link.active {
+        background-color: #f1f5f9;
+        color: var(--adm-blue);
+        font-weight: 600;
+    }
+</style>
 </head>
 <body class="bg-light">
 
